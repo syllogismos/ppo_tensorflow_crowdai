@@ -72,12 +72,15 @@ class Logger(object):
         filenames = glob.glob('*.py')  # put copy of all python files in log_dir
         for filename in filenames:     # for reference
             shutil.copy(filename, path)
+        self.log_dir = path
         path = os.path.join(path, 'log.csv')
-
         self.write_header = True
         self.log_entry = {}
         self.f = open(path, 'w')
         self.writer = None  # DictWriter created with first call to write() method
+
+    def get_file_name(self, suffix):
+        return os.path.join(self.log_dir, suffix)
 
     def write(self, display=True):
         """ Write 1 log entry to file, and optionally to stdout

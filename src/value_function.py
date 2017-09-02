@@ -11,7 +11,7 @@ from sklearn.utils import shuffle
 
 class NNValueFunction(object):
     """ NN-based state-value function """
-    def __init__(self, obs_dim):
+    def __init__(self, obs_dim, logger, snapshot=None):
         """
         Args:
             obs_dim: number of dimensions in observation vector (int)
@@ -21,9 +21,27 @@ class NNValueFunction(object):
         self.obs_dim = obs_dim
         self.epochs = 10
         self.lr = None  # learning rate set in _build_graph()
-        self._build_graph()
-        self.sess = tf.Session(graph=self.g)
-        self.sess.run(self.init)
+        self._init_layers_sizes()
+        print(snapshot, '$$$$$')
+        if snapshot == None:
+            print('@@@@ new value object')
+            self._build_graph()
+            self.sess = tf.Session(graph=self.g)
+            self.sess.run(self.init)
+        else:
+            self._build_graph_from_snapshot(snapshot)
+        self.value_checkpoint = logger.get_file_name('value-model')
+        self.saver.save(self.sess, self.value_checkpoint, latest_filename='value_checkpoint', global_step=0)
+
+    def _init_layers_sizes(self):
+        # hid1 layer size is 10x obs_dim, hid3 size is 10, and hid2 is geometric mean
+        self.hid1_size = self.obs_dim * 10  # 10 chosen empirically on 'Hopper-v1'
+        self.hid3_size = 5  # 5 chosen empirically on 'Hopper-v1'
+        self.hid2_size = int(np.sqrt(self.hid1_size * self.hid3_size))
+        # heuristic to set learning rate based on NN size (tuned on 'Hopper-v1')
+        self.lr = 1e-2 / np.sqrt(self.hid2_size)  # 1e-3 empirically determined
+        print('Value Params -- h1: {}, h2: {}, h3: {}, lr: {:.3g}'
+              .format(self.hid1_size, self.hid2_size, self.hid3_size, self.lr))
 
     def _build_graph(self):
         """ Construct TensorFlow graph, including loss function, init op and train op """
@@ -31,36 +49,52 @@ class NNValueFunction(object):
         with self.g.as_default():
             self.obs_ph = tf.placeholder(tf.float32, (None, self.obs_dim), 'obs_valfunc')
             self.val_ph = tf.placeholder(tf.float32, (None,), 'val_valfunc')
-            # hid1 layer size is 10x obs_dim, hid3 size is 10, and hid2 is geometric mean
-            hid1_size = self.obs_dim * 10  # 10 chosen empirically on 'Hopper-v1'
-            hid3_size = 5  # 5 chosen empirically on 'Hopper-v1'
-            hid2_size = int(np.sqrt(hid1_size * hid3_size))
-            # heuristic to set learning rate based on NN size (tuned on 'Hopper-v1')
-            self.lr = 1e-2 / np.sqrt(hid2_size)  # 1e-3 empirically determined
-            print('Value Params -- h1: {}, h2: {}, h3: {}, lr: {:.3g}'
-                  .format(hid1_size, hid2_size, hid3_size, self.lr))
             # 3 hidden layers with tanh activations
-            out = tf.layers.dense(self.obs_ph, hid1_size, tf.tanh,
+            out = tf.layers.dense(self.obs_ph, self.hid1_size, tf.tanh,
                                   kernel_initializer=tf.random_normal_initializer(
                                       stddev=np.sqrt(1 / self.obs_dim)), name="h1")
-            out = tf.layers.dense(out, hid2_size, tf.tanh,
+            out = tf.layers.dense(out, self.hid2_size, tf.tanh,
                                   kernel_initializer=tf.random_normal_initializer(
-                                      stddev=np.sqrt(1 / hid1_size)), name="h2")
-            out = tf.layers.dense(out, hid3_size, tf.tanh,
+                                      stddev=np.sqrt(1 / self.hid1_size)), name="h2")
+            out = tf.layers.dense(out, self.hid3_size, tf.tanh,
                                   kernel_initializer=tf.random_normal_initializer(
-                                      stddev=np.sqrt(1 / hid2_size)), name="h3")
+                                      stddev=np.sqrt(1 / self.hid2_size)), name="h3")
             out = tf.layers.dense(out, 1,
                                   kernel_initializer=tf.random_normal_initializer(
-                                      stddev=np.sqrt(1 / hid3_size)), name='output')
+                                      stddev=np.sqrt(1 / self.hid3_size)), name='output')
             self.out = tf.squeeze(out)
             self.loss = tf.reduce_mean(tf.square(self.out - self.val_ph))  # squared loss
             optimizer = tf.train.AdamOptimizer(self.lr)
             self.train_op = optimizer.minimize(self.loss)
-            self.init = tf.global_variables_initializer()
-        self.sess = tf.Session(graph=self.g)
-        self.sess.run(self.init)
 
-    def fit(self, x, y, logger):
+            tf.add_to_collection('obs_ph_chk', self.obs_ph)
+            tf.add_to_collection('val_ph_chk', self.val_ph)
+            tf.add_to_collection('out_chk', self.out)
+            tf.add_to_collection('loss_chk', self.loss)
+            tf.add_to_collection('train_op_chk', self.train_op)
+
+            self.init = tf.global_variables_initializer()
+            self.saver = tf.train.Saver()
+        # self.sess = tf.Session(graph=self.g)
+        # self.sess.run(self.init)
+
+    def _build_graph_from_snapshot(self, snapshot):
+        """ Build graph from snapshot provided """
+        print('@@@@@@@@@@@@@@loading from value snapshot')
+        self.g = tf.Graph()
+        self.sess = tf.Session(graph=self.g)
+        with self.g.as_default():
+            meta_graph = tf.train.import_meta_graph(snapshot + '/value-model-0.meta')
+            self.saver = tf.train.Saver()
+            meta_graph.restore(self.sess, tf.train.latest_checkpoint(snapshot, latest_filename='value_checkpoint'))
+            self.obs_ph = tf.get_collection('obs_ph_chk')[0]
+            self.val_ph = tf.get_collection('val_ph_chk')[0]
+            self.out = tf.get_collection('out_chk')[0]
+            self.loss = tf.get_collection('loss_chk')[0]
+            self.train_op = tf.get_collection('train_op_chk')[0]
+
+
+    def fit(self, x, y, logger, episode):
         """ Fit model to current data batch + previous data batch
 
         Args:
@@ -91,6 +125,7 @@ class NNValueFunction(object):
         loss = np.mean(np.square(y_hat - y))         # explained variance after update
         exp_var = 1 - np.var(y - y_hat) / np.var(y)  # diagnose over-fitting of val func
 
+        self.saver.save(self.sess, self.value_checkpoint, global_step=episode, latest_filename='value_checkpoint', write_meta_graph=False)
         logger.log({'ValFuncLoss': loss,
                     'ExplainedVarNew': exp_var,
                     'ExplainedVarOld': old_exp_var})

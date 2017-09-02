@@ -1,6 +1,7 @@
 # logs and checkpoints
 .idea/
 *.log
+*.swp
 notebooks/__pycache__/
 notebooks/.ipynb_checkpoints/
 src/__pycache__/
@@ -10,4 +11,4 @@ tmp/
 
 # generated files
 exportToHTML/
-
+log-files/

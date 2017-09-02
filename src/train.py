@@ -36,7 +36,7 @@ from datetime import datetime
 import os
 import argparse
 import signal
-
+from osim.env import RunEnv
 
 class GracefulKiller:
     """ Gracefully exit program on CTRL-C """
@@ -49,7 +49,7 @@ class GracefulKiller:
         self.kill_now = True
 
 
-def init_gym(env_name):
+def init_gym():
     """
     Initialize gym environment, return dimension of observation
     and action spaces.
@@ -62,7 +62,8 @@ def init_gym(env_name):
         number of observation dimensions (int)
         number of action dimensions (int)
     """
-    env = gym.make(env_name)
+    # env = gym.make(env_name)
+    env = RunEnv(visualize=False)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
 
@@ -85,7 +86,8 @@ def run_episode(env, policy, scaler, animate=False):
         rewards: shape = (episode len,)
         unscaled_obs: useful for training scaler, shape = (episode len, obs_dim)
     """
-    obs = env.reset()
+    print("Episode run")
+    obs = env.reset(difficulty=2)
     observes, actions, rewards, unscaled_obs = [], [], [], []
     done = False
     step = 0.0
@@ -95,6 +97,7 @@ def run_episode(env, policy, scaler, animate=False):
     while not done:
         if animate:
             env.render()
+        obs = np.asarray(obs)
         obs = obs.astype(np.float64).reshape((1, -1))
         obs = np.append(obs, [[step]], axis=1)  # add time step feature
         unscaled_obs.append(obs)
@@ -102,7 +105,7 @@ def run_episode(env, policy, scaler, animate=False):
         observes.append(obs)
         action = policy.sample(obs).reshape((1, -1)).astype(np.float64)
         actions.append(action)
-        obs, reward, done, _ = env.step(action)
+        obs, reward, done, _ = env.step(action[0])
         if not isinstance(reward, float):
             reward = np.asscalar(reward)
         rewards.append(reward)
@@ -260,7 +263,7 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
                 })
 
 
-def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size):
+def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot):
     """ Main training loop
 
     Args:
@@ -272,17 +275,17 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size):
         batch_size: number of episodes per policy training batch
     """
     killer = GracefulKiller()
-    env, obs_dim, act_dim = init_gym(env_name)
+    env, obs_dim, act_dim = init_gym()
     obs_dim += 1  # add 1 to obs dimension for time step feature (see run_episode())
     now = datetime.utcnow().strftime("%b-%d_%H:%M:%S")  # create unique directories
     logger = Logger(logname=env_name, now=now)
     aigym_path = os.path.join('/tmp', env_name, now)
-    env = wrappers.Monitor(env, aigym_path, force=True)
+    # env = wrappers.Monitor(env, aigym_path, force=True)
     scaler = Scaler(obs_dim)
-    val_func = NNValueFunction(obs_dim)
-    policy = Policy(obs_dim, act_dim, kl_targ)
+    val_func = NNValueFunction(obs_dim, logger, snapshot=snapshot)
+    policy = Policy(obs_dim, act_dim, kl_targ, logger, snapshot=snapshot)
     # run a few episodes of untrained policy to initialize scaler:
-    run_policy(env, policy, scaler, logger, episodes=5)
+    run_policy(env, policy, scaler, logger, episodes=2)
     episode = 0
     while episode < num_episodes:
         trajectories = run_policy(env, policy, scaler, logger, episodes=batch_size)
@@ -294,8 +297,8 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size):
         observes, actions, advantages, disc_sum_rew = build_train_set(trajectories)
         # add various stats to training log:
         log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode)
-        policy.update(observes, actions, advantages, logger)  # update policy
-        val_func.fit(observes, disc_sum_rew, logger)  # update value function
+        policy.update(observes, actions, advantages, logger, episode)  # update policy
+        val_func.fit(observes, disc_sum_rew, logger, episode)  # update value function
         logger.write(display=True)  # write logger results to file and stdout
         if killer.kill_now:
             if input('Terminate training (y/[n])? ') == 'y':
@@ -320,6 +323,9 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--batch_size', type=int,
                         help='Number of episodes per training batch',
                         default=20)
+    parser.add_argument('-s', '--snapshot', type=str,
+                        help='Snapshot folder')
 
     args = parser.parse_args()
+    print(args)
     main(**vars(args))
