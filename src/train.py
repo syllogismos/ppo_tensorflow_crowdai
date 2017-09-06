@@ -37,6 +37,11 @@ import os
 import argparse
 import signal
 from osim.env import RunEnv
+from multiprocessing import Pool
+import multiprocessing
+import urllib
+import http.client
+import json, pickle
 
 class GracefulKiller:
     """ Gracefully exit program on CTRL-C """
@@ -68,7 +73,6 @@ def init_gym():
     act_dim = env.action_space.shape[0]
 
     return env, obs_dim, act_dim
-
 
 def run_episode(env, policy, scaler, animate=False):
     """ Run single episode with option to animate
@@ -111,11 +115,16 @@ def run_episode(env, policy, scaler, animate=False):
         rewards.append(reward)
         step += 1e-3  # increment time step feature
 
-    return (np.concatenate(observes), np.concatenate(actions),
-            np.array(rewards, dtype=np.float64), np.concatenate(unscaled_obs))
+    trajectory = {'observes': np.concatenate(observes),
+                 'actions': np.concatenate(actions),
+                 'rewards': np.array(rewards, dtype=np.float64),
+                 'unscaled_obs': np.concatenate(unscaled_obs)}
+    return trajectory
+    # return (np.concatenate(observes), np.concatenate(actions),
+    #         np.array(rewards, dtype=np.float64), np.concatenate(unscaled_obs))
 
 
-def run_policy(env, policy, scaler, logger, episodes):
+def run_policy(env, policy, scaler, logger, episodes, cores):
     """ Run policy and collect data for a minimum of min_steps and min_episodes
 
     Args:
@@ -132,16 +141,28 @@ def run_policy(env, policy, scaler, logger, episodes):
         'rewards' : NumPy array of (un-discounted) rewards from episode
         'unscaled_obs' : NumPy array of (un-discounted) rewards from episode
     """
-    total_steps = 0
-    trajectories = []
-    for e in range(episodes):
-        observes, actions, rewards, unscaled_obs = run_episode(env, policy, scaler)
-        total_steps += observes.shape[0]
-        trajectory = {'observes': observes,
-                      'actions': actions,
-                      'rewards': rewards,
-                      'unscaled_obs': unscaled_obs}
-        trajectories.append(trajectory)
+    if cores > 1:
+        conn = http.client.HTTPConnection('127.0.0.1:8018')
+        headers = {
+                "cache-control": "no-cache"
+                }
+        query = {
+                "chk_dir": logger.log_dir,
+                "episodes": episodes,
+                "cores": cores
+                }
+        encoded_query = urllib.parse.urlencode(query)
+        response = None
+        while response != 'OK':
+            conn.request("GET", "/get_episodes?" + encoded_query,
+                    headers=headers)
+            res = conn.getresponse()
+            response = json.loads(res.read())['Success']
+            print(response, '@@@@@@@@@@@@@@@@@@@@@@@@@')
+            trajectories = pickle.load(open(logger.log_dir + '/episodes_latest', 'rb'))
+    else:
+        trajectories = [run_episode(env, policy, scaler) for x in range(episodes)]
+    total_steps = sum([t['observes'].shape[0] for t in trajectories])
     unscaled = np.concatenate([t['unscaled_obs'] for t in trajectories])
     scaler.update(unscaled)  # update running statistics for scaling observations
     logger.log({'_MeanReward': np.mean([t['rewards'].sum() for t in trajectories]),
@@ -263,7 +284,8 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
                 })
 
 
-def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot):
+def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
+        cores):
     """ Main training loop
 
     Args:
@@ -282,14 +304,24 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot):
     aigym_path = os.path.join('/tmp', env_name, now)
     # env = wrappers.Monitor(env, aigym_path, force=True)
     scaler = Scaler(obs_dim)
+    pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
+    pickle.dump(scaler, open(logger.log_dir + '/scaler_0', 'wb'))
     val_func = NNValueFunction(obs_dim, logger, snapshot=snapshot)
     policy = Policy(obs_dim, act_dim, kl_targ, logger, snapshot=snapshot)
     # run a few episodes of untrained policy to initialize scaler:
-    run_policy(env, policy, scaler, logger, episodes=2)
+    print(scaler.means)
+    print(scaler.vars)
+    run_policy(env, policy, scaler, logger, episodes=5, cores=cores)
+    print(scaler.means)
+    print(scaler.vars)
     episode = 0
+    pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
+    pickle.dump(scaler, open(logger.log_dir + '/scaler_0' + str(episode), 'wb'))
     while episode < num_episodes:
-        trajectories = run_policy(env, policy, scaler, logger, episodes=batch_size)
+        trajectories = run_policy(env, policy, scaler, logger, episodes=batch_size, cores=cores)
         episode += len(trajectories)
+        pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
+        pickle.dump(scaler, open(logger.log_dir + '/scaler_' + str(episode), 'wb'))
         add_value(trajectories, val_func)  # add estimated values to episodes
         add_disc_sum_rew(trajectories, gamma)  # calculated discounted sum of Rs
         add_gae(trajectories, gamma, lam)  # calculate advantage
@@ -310,6 +342,7 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot):
 
 
 if __name__ == "__main__":
+    # multiprocessing.set_start_method('spawn')
     parser = argparse.ArgumentParser(description=('Train policy on OpenAI Gym environment '
                                                   'using Proximal Policy Optimizer'))
     parser.add_argument('env_name', type=str, help='OpenAI Gym environment name')
@@ -323,6 +356,9 @@ if __name__ == "__main__":
     parser.add_argument('-b', '--batch_size', type=int,
                         help='Number of episodes per training batch',
                         default=20)
+    parser.add_argument('-c', '--cores', type=int,
+                        help='Number of parallel threads',
+                        default=2)
     parser.add_argument('-s', '--snapshot', type=str,
                         help='Snapshot folder')
 

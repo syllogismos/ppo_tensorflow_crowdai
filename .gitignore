@@ -12,3 +12,5 @@ tmp/
 # generated files
 exportToHTML/
 log-files/
+*.vim
+*.pyc

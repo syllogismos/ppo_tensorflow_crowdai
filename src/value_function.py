@@ -74,7 +74,7 @@ class NNValueFunction(object):
             tf.add_to_collection('train_op_chk', self.train_op)
 
             self.init = tf.global_variables_initializer()
-            self.saver = tf.train.Saver()
+            self.saver = tf.train.Saver(max_to_keep=0)
         # self.sess = tf.Session(graph=self.g)
         # self.sess.run(self.init)
 
@@ -85,7 +85,7 @@ class NNValueFunction(object):
         self.sess = tf.Session(graph=self.g)
         with self.g.as_default():
             meta_graph = tf.train.import_meta_graph(snapshot + '/value-model-0.meta')
-            self.saver = tf.train.Saver()
+            self.saver = tf.train.Saver(max_to_keep=0)
             meta_graph.restore(self.sess, tf.train.latest_checkpoint(snapshot, latest_filename='value_checkpoint'))
             self.obs_ph = tf.get_collection('obs_ph_chk')[0]
             self.val_ph = tf.get_collection('val_ph_chk')[0]
