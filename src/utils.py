@@ -105,7 +105,7 @@ class Logger(object):
         """Print metrics to stdout"""
         log_keys = [k for k in log.keys()]
         log_keys.sort()
-        print('***** Episode {}, Mean R = {:.1f} *****'.format(log['_Episode'],
+        print('***** Episode {}, Mean R = {:.3f} *****'.format(log['_Episode'],
                                                                log['_MeanReward']))
         for key in log_keys:
             if key[0] != '_':  # don't display log items with leading '_'

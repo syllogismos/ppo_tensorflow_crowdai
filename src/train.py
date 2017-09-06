@@ -42,6 +42,7 @@ import multiprocessing
 import urllib
 import http.client
 import json, pickle
+import time
 
 class GracefulKiller:
     """ Gracefully exit program on CTRL-C """
@@ -158,7 +159,6 @@ def run_policy(env, policy, scaler, logger, episodes, cores):
                     headers=headers)
             res = conn.getresponse()
             response = json.loads(res.read())['Success']
-            print(response, '@@@@@@@@@@@@@@@@@@@@@@@@@')
             trajectories = pickle.load(open(logger.log_dir + '/episodes_latest', 'rb'))
     else:
         trajectories = [run_episode(env, policy, scaler) for x in range(episodes)]
@@ -166,6 +166,9 @@ def run_policy(env, policy, scaler, logger, episodes, cores):
     unscaled = np.concatenate([t['unscaled_obs'] for t in trajectories])
     scaler.update(unscaled)  # update running statistics for scaling observations
     logger.log({'_MeanReward': np.mean([t['rewards'].sum() for t in trajectories]),
+                'MaxReward': np.max([t['rewards'].sum() for t in trajectories]),
+                'MinReward': np.min([t['rewards'].sum() for t in trajectories]),
+                'MeanLen': np.mean([len(t['rewards']) for t in trajectories]),
                 'Steps': total_steps})
 
     return trajectories
@@ -303,21 +306,24 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
     logger = Logger(logname=env_name, now=now)
     aigym_path = os.path.join('/tmp', env_name, now)
     # env = wrappers.Monitor(env, aigym_path, force=True)
-    scaler = Scaler(obs_dim)
-    pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
-    pickle.dump(scaler, open(logger.log_dir + '/scaler_0', 'wb'))
     val_func = NNValueFunction(obs_dim, logger, snapshot=snapshot)
     policy = Policy(obs_dim, act_dim, kl_targ, logger, snapshot=snapshot)
-    # run a few episodes of untrained policy to initialize scaler:
-    print(scaler.means)
-    print(scaler.vars)
-    run_policy(env, policy, scaler, logger, episodes=5, cores=cores)
-    print(scaler.means)
-    print(scaler.vars)
+    if snapshot != None:
+        print("loading scaler from", snapshot)
+        scaler = pickle.load(open(snapshot + '/scaler_latest', 'rb'))
+    else:
+        scaler = Scaler(obs_dim)
+        pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
+        pickle.dump(scaler, open(logger.log_dir + '/scaler_0', 'wb'))
+        # run a few episodes of untrained policy to initialize scaler:
+        run_policy(env, policy, scaler, logger, episodes=5, cores=cores)
+        print(scaler.means)
+        print(scaler.vars)
     episode = 0
     pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
     pickle.dump(scaler, open(logger.log_dir + '/scaler_0' + str(episode), 'wb'))
     while episode < num_episodes:
+        begin = time.time()
         trajectories = run_policy(env, policy, scaler, logger, episodes=batch_size, cores=cores)
         episode += len(trajectories)
         pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
@@ -330,6 +336,7 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
         # add various stats to training log:
         log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode)
         policy.update(observes, actions, advantages, logger, episode)  # update policy
+        logger.log({'TimeTaken': time.time() - begin})
         val_func.fit(observes, disc_sum_rew, logger, episode)  # update value function
         logger.write(display=True)  # write logger results to file and stdout
         if killer.kill_now:
