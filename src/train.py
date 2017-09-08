@@ -91,41 +91,42 @@ def run_episode(env, policy, scaler, animate=False):
         rewards: shape = (episode len,)
         unscaled_obs: useful for training scaler, shape = (episode len, obs_dim)
     """
-    print("Episode run")
-    obs = env.reset(difficulty=2)
-    observes, actions, rewards, unscaled_obs = [], [], [], []
-    done = False
-    step = 0.0
-    scale, offset = scaler.get()
-    scale[-1] = 1.0  # don't scale time step feature
-    offset[-1] = 0.0  # don't offset time step feature
-    while not done:
-        if animate:
-            env.render()
-        obs = np.asarray(obs)
-        obs = obs.astype(np.float64).reshape((1, -1))
-        obs = np.append(obs, [[step]], axis=1)  # add time step feature
-        unscaled_obs.append(obs)
-        obs = (obs - offset) * scale  # center and scale observations
-        observes.append(obs)
-        action = policy.sample(obs).reshape((1, -1)).astype(np.float64)
-        actions.append(action)
-        obs, reward, done, _ = env.step(action[0])
-        if not isinstance(reward, float):
-            reward = np.asscalar(reward)
-        rewards.append(reward)
-        step += 1e-3  # increment time step feature
+    pass
+#     print("Episode run")
+#     obs = env.reset(difficulty=2)
+#     observes, actions, rewards, unscaled_obs = [], [], [], []
+#     done = False
+#     step = 0.0
+#     scale, offset = scaler.get()
+#     scale[-1] = 1.0  # don't scale time step feature
+#     offset[-1] = 0.0  # don't offset time step feature
+#     while not done:
+#         if animate:
+#             env.render()
+#         obs = np.asarray(obs)
+#         obs = obs.astype(np.float64).reshape((1, -1))
+#         obs = np.append(obs, [[step]], axis=1)  # add time step feature
+#         unscaled_obs.append(obs)
+#         obs = (obs - offset) * scale  # center and scale observations
+#         observes.append(obs)
+#         action = policy.sample(obs).reshape((1, -1)).astype(np.float64)
+#         actions.append(action)
+#         obs, reward, done, _ = env.step(action[0])
+#         if not isinstance(reward, float):
+#             reward = np.asscalar(reward)
+#         rewards.append(reward)
+#         step += 1e-3  # increment time step feature
+#
+#     trajectory = {'observes': np.concatenate(observes),
+#                  'actions': np.concatenate(actions),
+#                  'rewards': np.array(rewards, dtype=np.float64),
+#                  'unscaled_obs': np.concatenate(unscaled_obs)}
+#     return trajectory
+#     # return (np.concatenate(observes), np.concatenate(actions),
+#     #         np.array(rewards, dtype=np.float64), np.concatenate(unscaled_obs))
 
-    trajectory = {'observes': np.concatenate(observes),
-                 'actions': np.concatenate(actions),
-                 'rewards': np.array(rewards, dtype=np.float64),
-                 'unscaled_obs': np.concatenate(unscaled_obs)}
-    return trajectory
-    # return (np.concatenate(observes), np.concatenate(actions),
-    #         np.array(rewards, dtype=np.float64), np.concatenate(unscaled_obs))
 
-
-def run_policy(env, policy, scaler, logger, episodes, cores):
+def run_policy(env, policy, scaler, logger, episodes, cores, port):
     """ Run policy and collect data for a minimum of min_steps and min_episodes
 
     Args:
@@ -143,7 +144,8 @@ def run_policy(env, policy, scaler, logger, episodes, cores):
         'unscaled_obs' : NumPy array of (un-discounted) rewards from episode
     """
     if cores > 1:
-        conn = http.client.HTTPConnection('127.0.0.1:8018')
+        conn_str = '127.0.0.1:' + str(port)
+        conn = http.client.HTTPConnection(conn_str)
         headers = {
                 "cache-control": "no-cache"
                 }
@@ -288,7 +290,7 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
 
 
 def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
-        cores):
+        cores, port):
     """ Main training loop
 
     Args:
@@ -316,7 +318,7 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
         pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
         pickle.dump(scaler, open(logger.log_dir + '/scaler_0', 'wb'))
         # run a few episodes of untrained policy to initialize scaler:
-        run_policy(env, policy, scaler, logger, episodes=5, cores=cores)
+        run_policy(env, policy, scaler, logger, episodes=5, cores=cores, port=port)
         print(scaler.means)
         print(scaler.vars)
     episode = 0
@@ -324,7 +326,7 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
     pickle.dump(scaler, open(logger.log_dir + '/scaler_0' + str(episode), 'wb'))
     while episode < num_episodes:
         begin = time.time()
-        trajectories = run_policy(env, policy, scaler, logger, episodes=batch_size, cores=cores)
+        trajectories = run_policy(env, policy, scaler, logger, episodes=batch_size, cores=cores, port=port)
         episode += len(trajectories)
         pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
         pickle.dump(scaler, open(logger.log_dir + '/scaler_' + str(episode), 'wb'))
@@ -369,6 +371,9 @@ if __name__ == "__main__":
     parser.add_argument('-s', '--snapshot', type=str,
                         help='Snapshot folder')
 
+    parser.add_argument('-p', '--port', type=int,
+                        help='Parallel worker port',
+                        default=8018)
     args = parser.parse_args()
     print(args)
     main(**vars(args))

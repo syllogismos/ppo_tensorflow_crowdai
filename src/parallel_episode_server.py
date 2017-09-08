@@ -53,9 +53,10 @@ def run_episode_from_last_checkpoint(pickled_object):
     chkp_dir = pickled_object[1]
     sess = tf.Session()
     # chkp_dir = '/home/ubuntu/pat-cody/log-files/RunEnv_test2/Sep-02_11:57:45'
-    meta_graph = tf.train.import_meta_graph(chkp_dir + '/policy-model-0.meta')
-    print(tf.train.latest_checkpoint(chkp_dir, latest_filename='policy_checkpoint'))
-    meta_graph.restore(sess, tf.train.latest_checkpoint(chkp_dir, latest_filename='policy_checkpoint'))
+    latest_chkp_file = tf.train.latest_checkpoint(chkp_dir, latest_filename='policy_checkpoint')
+    meta_graph = tf.train.import_meta_graph(latest_chkp_file + '.meta')
+    print(latest_chkp_file)
+    meta_graph.restore(sess, latest_chkp_file)
     obs_ph = tf.get_collection('obs_ph_chk')[0]
     sampled_act = tf.get_collection('sampled_act_chk')[0]
     env = RunEnv(visualize=False)

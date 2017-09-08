@@ -46,16 +46,17 @@ class Policy(object):
             self._sample()
             self._loss_train_op()
             self.init = tf.global_variables_initializer()
-            self.saver = tf.train.Saver(max_to_keep=0)
+            self.saver = tf.train.Saver(max_to_keep=1000)
 
     def _build_graph_from_snapshot(self, snapshot):
         """ Build graph from snapshot provided """
         self.g = tf.Graph()
         self.sess = tf.Session(graph=self.g)
         with self.g.as_default():
-            meta_graph = tf.train.import_meta_graph(snapshot + '/policy-model-0.meta')
-            self.saver = tf.train.Saver(max_to_keep=0)
-            meta_graph.restore(self.sess, tf.train.latest_checkpoint(snapshot, latest_filename='policy_checkpoint'))
+            latest_chkp_file = tf.train.latest_checkpoint(snapshot, latest_filename='policy_checkpoint')
+            meta_graph = tf.train.import_meta_graph(latest_chkp_file + '.meta')
+            self.saver = tf.train.Saver(max_to_keep=1000)
+            meta_graph.restore(self.sess, latest_chkp_file)
 
             self.obs_ph = tf.get_collection('obs_ph_chk')[0]
             self.act_ph = tf.get_collection('act_ph_chk')[0]
@@ -267,7 +268,7 @@ class Policy(object):
             if self.beta < (1 / 30) and self.lr_multiplier < 10:
                 self.lr_multiplier *= 1.5
 
-        self.saver.save(self.sess, self.policy_checkpoint, global_step=episode, latest_filename='policy_checkpoint', write_meta_graph=False)
+        self.saver.save(self.sess, self.policy_checkpoint, global_step=episode, latest_filename='policy_checkpoint')
 
         logger.log({'PolicyLoss': loss,
                     'PolicyEntropy': entropy,

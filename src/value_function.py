@@ -74,7 +74,7 @@ class NNValueFunction(object):
             tf.add_to_collection('train_op_chk', self.train_op)
 
             self.init = tf.global_variables_initializer()
-            self.saver = tf.train.Saver(max_to_keep=0)
+            self.saver = tf.train.Saver(max_to_keep=1000)
         # self.sess = tf.Session(graph=self.g)
         # self.sess.run(self.init)
 
@@ -84,9 +84,10 @@ class NNValueFunction(object):
         self.g = tf.Graph()
         self.sess = tf.Session(graph=self.g)
         with self.g.as_default():
-            meta_graph = tf.train.import_meta_graph(snapshot + '/value-model-0.meta')
-            self.saver = tf.train.Saver(max_to_keep=0)
-            meta_graph.restore(self.sess, tf.train.latest_checkpoint(snapshot, latest_filename='value_checkpoint'))
+            latest_chkp_file = tf.train.latest_checkpoint(snapshot, latest_filename='value_checkpoint')
+            meta_graph = tf.train.import_meta_graph(latest_chkp_file + '.meta')
+            self.saver = tf.train.Saver(max_to_keep=1000)
+            meta_graph.restore(self.sess, latest_chkp_file)
             self.obs_ph = tf.get_collection('obs_ph_chk')[0]
             self.val_ph = tf.get_collection('val_ph_chk')[0]
             self.out = tf.get_collection('out_chk')[0]
@@ -125,7 +126,7 @@ class NNValueFunction(object):
         loss = np.mean(np.square(y_hat - y))         # explained variance after update
         exp_var = 1 - np.var(y - y_hat) / np.var(y)  # diagnose over-fitting of val func
 
-        self.saver.save(self.sess, self.value_checkpoint, global_step=episode, latest_filename='value_checkpoint', write_meta_graph=False)
+        self.saver.save(self.sess, self.value_checkpoint, global_step=episode, latest_filename='value_checkpoint')
         logger.log({'ValFuncLoss': loss,
                     'ExplainedVarNew': exp_var,
                     'ExplainedVarOld': old_exp_var})
