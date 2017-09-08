@@ -31,7 +31,7 @@ from gym import wrappers
 from policy import Policy
 from value_function import NNValueFunction
 import scipy.signal
-from utils import Logger, Scaler
+from utils import Logger, Scaler, get_computed_observation
 from datetime import datetime
 import os
 import argparse
@@ -70,7 +70,8 @@ def init_gym():
     """
     # env = gym.make(env_name)
     env = RunEnv(visualize=False)
-    obs_dim = env.observation_space.shape[0]
+    obs_env_dim = env.observation_space.shape[0]
+    obs_dim = len(get_computed_observation([0]*obs_env_dim, [0]*obs_env_dim))
     act_dim = env.action_space.shape[0]
 
     return env, obs_dim, act_dim

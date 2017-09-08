@@ -8,7 +8,46 @@ import os
 import shutil
 import glob
 import csv
+import copy
 
+
+def get_computed_observation(obs, old_obs):
+    new_obs = copy.copy(obs)
+    pelvis = obs[1]
+    head = obs[22]
+    com = obs[18]
+    new_obs.append(pelvis - head)
+    new_obs.append(pelvis - com)
+    new_obs.append(head - com)
+    new_obs.append(pelvis - old_obs[22])
+    new_obs.append(pelvis - old_obs[24])
+    new_obs.append(pelvis - old_obs[26])
+    new_obs.append(pelvis - old_obs[28])
+    new_obs.append(pelvis - old_obs[30])
+    new_obs.append(pelvis - old_obs[32])
+    new_obs.append(pelvis - old_obs[34])
+    new_obs.append(head - old_obs[22])
+    new_obs.append(head - old_obs[24])
+    new_obs.append(head - old_obs[26])
+    new_obs.append(head - old_obs[28])
+    new_obs.append(head - old_obs[30])
+    new_obs.append(head - old_obs[32])
+    new_obs.append(head - old_obs[34])
+    new_obs.append(obs[22] - old_obs[22])
+    new_obs.append(obs[23] - old_obs[23])
+    new_obs.append(obs[24] - old_obs[24])
+    new_obs.append(obs[25] - old_obs[25])
+    new_obs.append(obs[26] - old_obs[26])
+    new_obs.append(obs[27] - old_obs[27])
+    new_obs.append(obs[28] - old_obs[28])
+    new_obs.append(obs[29] - old_obs[29])
+    new_obs.append(obs[30] - old_obs[30])
+    new_obs.append(obs[31] - old_obs[31])
+    new_obs.append(obs[32] - old_obs[32])
+    new_obs.append(obs[33] - old_obs[33])
+    new_obs.append(obs[34] - old_obs[34])
+    new_obs.append(obs[35] - old_obs[35])
+    return new_obs
 
 class Scaler(object):
     """ Generate scale and offset based on running mean and stddev along axis=0

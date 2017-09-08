@@ -8,6 +8,8 @@ import numpy as np
 from utils import Scaler
 import multiprocessing
 import pickle
+import copy
+from utils import get_computed_observation
 
 
 PORT_NUMBER = 8018
@@ -31,6 +33,7 @@ def dump_episodes(chk_dir, episodes, cores):
     pickle.dump(tras, open(episodes_file, 'wb'))
 
 
+
 def run_episode_from_last_checkpoint(pickled_object):
     """
     Load the last checkpoint from the current folder, and using that
@@ -52,7 +55,6 @@ def run_episode_from_last_checkpoint(pickled_object):
     scaler = pickled_object[0]
     chkp_dir = pickled_object[1]
     sess = tf.Session()
-    # chkp_dir = '/home/ubuntu/pat-cody/log-files/RunEnv_test2/Sep-02_11:57:45'
     latest_chkp_file = tf.train.latest_checkpoint(chkp_dir, latest_filename='policy_checkpoint')
     meta_graph = tf.train.import_meta_graph(latest_chkp_file + '.meta')
     print(latest_chkp_file)
@@ -60,7 +62,8 @@ def run_episode_from_last_checkpoint(pickled_object):
     obs_ph = tf.get_collection('obs_ph_chk')[0]
     sampled_act = tf.get_collection('sampled_act_chk')[0]
     env = RunEnv(visualize=False)
-    obs = env.reset(difficulty=2)
+    cur_obs = env.reset(difficulty=2)
+    old_obs = copy.copy(cur_obs)
     observes, actions, rewards, unscaled_obs = [], [], [], []
     done = False
     step = 0.0
@@ -68,6 +71,7 @@ def run_episode_from_last_checkpoint(pickled_object):
     scale[-1] = 1.0
     offset[-1] = 0.0
     while not done:
+        obs = get_computed_observation(cur_obs, old_obs)
         obs = np.asarray(obs)
         obs = obs.astype(np.float64).reshape((1, -1))
         obs = np.append(obs, [[step]], axis=1)
@@ -76,7 +80,8 @@ def run_episode_from_last_checkpoint(pickled_object):
         observes.append(obs)
         action = get_action_from_obs(sess, obs_ph, sampled_act, obs)
         actions.append(action)
-        obs, reward, done, _ = env.step(action[0])
+        old_obs = copy.copy(cur_obs)
+        cur_obs, reward, done, _ = env.step(action[0])
         if not isinstance(reward, float):
             reward = np.asscalar(reward)
         rewards.append(reward)
