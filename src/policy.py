@@ -46,7 +46,7 @@ class Policy(object):
             self._sample()
             self._loss_train_op()
             self.init = tf.global_variables_initializer()
-            self.saver = tf.train.Saver(max_to_keep=1000)
+            self.saver = tf.train.Saver(max_to_keep=100)
 
     def _build_graph_from_snapshot(self, snapshot):
         """ Build graph from snapshot provided """
@@ -55,7 +55,7 @@ class Policy(object):
         with self.g.as_default():
             latest_chkp_file = tf.train.latest_checkpoint(snapshot, latest_filename='policy_checkpoint')
             meta_graph = tf.train.import_meta_graph(latest_chkp_file + '.meta')
-            self.saver = tf.train.Saver(max_to_keep=1000)
+            self.saver = tf.train.Saver(max_to_keep=100)
             meta_graph.restore(self.sess, latest_chkp_file)
 
             self.obs_ph = tf.get_collection('obs_ph_chk')[0]
