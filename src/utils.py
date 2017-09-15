@@ -11,7 +11,17 @@ import csv
 import copy
 
 
-def get_computed_observation(obs, old_obs):
+def build_features(obs, old_obs, filter_type):
+    if filter_type == 'IDENTITY':
+        return copy.copy(obs)
+    elif filter_type == 'FILTER1':
+        return get_computed_observation_filter1(obs, old_obs)
+
+def get_computed_observation_filter1(obs, old_obs):
+    """
+    given previous observation and current observation
+    add more features, like previous
+    """
     new_obs = copy.copy(obs)
     pelvis = obs[1]
     head = obs[22]

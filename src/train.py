@@ -31,7 +31,7 @@ from gym import wrappers
 from policy import Policy
 from value_function import NNValueFunction
 import scipy.signal
-from utils import Logger, Scaler, get_computed_observation
+from utils import Logger, Scaler, build_features
 from datetime import datetime
 import os
 import argparse
@@ -55,7 +55,7 @@ class GracefulKiller:
         self.kill_now = True
 
 
-def init_gym():
+def init_gym(filter_type):
     """
     Initialize gym environment, return dimension of observation
     and action spaces.
@@ -71,7 +71,7 @@ def init_gym():
     # env = gym.make(env_name)
     env = RunEnv(visualize=False)
     obs_env_dim = env.observation_space.shape[0]
-    obs_dim = len(get_computed_observation([0]*obs_env_dim, [0]*obs_env_dim))
+    obs_dim = len(build_features([0]*obs_env_dim, [0]*obs_env_dim, filter_type))
     act_dim = env.action_space.shape[0]
 
     return env, obs_dim, act_dim
@@ -127,7 +127,8 @@ def run_episode(env, policy, scaler, animate=False):
 #     #         np.array(rewards, dtype=np.float64), np.concatenate(unscaled_obs))
 
 
-def run_policy(env, policy, scaler, logger, episodes, cores, port):
+def run_policy(env, policy, scaler, logger,
+        episodes, cores, port, filter_type):
     """ Run policy and collect data for a minimum of min_steps and min_episodes
 
     Args:
@@ -153,7 +154,8 @@ def run_policy(env, policy, scaler, logger, episodes, cores, port):
         query = {
                 "chk_dir": logger.log_dir,
                 "episodes": episodes,
-                "cores": cores
+                "cores": cores,
+                "filter_type": filter_type
                 }
         encoded_query = urllib.parse.urlencode(query)
         response = None
@@ -291,7 +293,7 @@ def log_batch_stats(observes, actions, advantages, disc_sum_rew, logger, episode
 
 
 def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
-        cores, port):
+        cores, port, filter_type):
     """ Main training loop
 
     Args:
@@ -303,7 +305,7 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
         batch_size: number of episodes per policy training batch
     """
     killer = GracefulKiller()
-    env, obs_dim, act_dim = init_gym()
+    env, obs_dim, act_dim = init_gym(filter_type)
     obs_dim += 1  # add 1 to obs dimension for time step feature (see run_episode())
     now = datetime.utcnow().strftime("%b-%d_%H:%M:%S")  # create unique directories
     logger = Logger(logname=env_name, now=now)
@@ -319,7 +321,8 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
         pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
         pickle.dump(scaler, open(logger.log_dir + '/scaler_0', 'wb'))
         # run a few episodes of untrained policy to initialize scaler:
-        run_policy(env, policy, scaler, logger, episodes=5, cores=cores, port=port)
+        run_policy(env, policy, scaler, logger,
+                episodes=5, cores=cores, port=port, filter_type=filter_type)
         print(scaler.means)
         print(scaler.vars)
     episode = 0
@@ -327,7 +330,8 @@ def main(env_name, num_episodes, gamma, lam, kl_targ, batch_size, snapshot,
     pickle.dump(scaler, open(logger.log_dir + '/scaler_0' + str(episode), 'wb'))
     while episode < num_episodes:
         begin = time.time()
-        trajectories = run_policy(env, policy, scaler, logger, episodes=batch_size, cores=cores, port=port)
+        trajectories = run_policy(env, policy, scaler, logger,
+                episodes=batch_size, cores=cores, port=port, filter_type=filter_type)
         episode += len(trajectories)
         pickle.dump(scaler, open(logger.log_dir + '/scaler_latest', 'wb'))
         pickle.dump(scaler, open(logger.log_dir + '/scaler_' + str(episode), 'wb'))
@@ -375,6 +379,9 @@ if __name__ == "__main__":
     parser.add_argument('-p', '--port', type=int,
                         help='Parallel worker port',
                         default=8018)
+    parser.add_argument('-f', '--filter_type', type=str,
+                        help='type of the filter on observation vector',
+                        default='IDENTITY')
     args = parser.parse_args()
     print(args)
     main(**vars(args))

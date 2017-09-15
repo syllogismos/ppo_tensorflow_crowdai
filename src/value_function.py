@@ -6,6 +6,7 @@ Written by Patrick Coady (pat-coady.github.io)
 
 import tensorflow as tf
 import numpy as np
+import os
 from sklearn.utils import shuffle
 
 
@@ -85,7 +86,10 @@ class NNValueFunction(object):
         self.sess = tf.Session(graph=self.g)
         with self.g.as_default():
             latest_chkp_file = tf.train.latest_checkpoint(snapshot, latest_filename='value_checkpoint')
-            meta_graph = tf.train.import_meta_graph(latest_chkp_file + '.meta')
+            meta_file = latest_chkp_file + '.meta'
+            if not os.path.exists(meta_file):
+                meta_file = snapshot + '/value-model-0.meta'
+            meta_graph = tf.train.import_meta_graph(meta_file)
             self.saver = tf.train.Saver(max_to_keep=100)
             meta_graph.restore(self.sess, latest_chkp_file)
             self.obs_ph = tf.get_collection('obs_ph_chk')[0]

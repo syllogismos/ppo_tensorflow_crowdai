@@ -9,24 +9,18 @@ from utils import Scaler
 import multiprocessing
 import pickle
 import copy
-from utils import get_computed_observation
+from utils import build_features
 
 
 PORT_NUMBER = 8018
 
-def mp_test(s):
-    p = multiprocessing.Pool(2)
-    tras = p.map(run_episode_from_last_checkpoint, [(s, 'a')]*4)
-    p.close()
-    p.join()
-    return tras
 
-def dump_episodes(chk_dir, episodes, cores):
+def dump_episodes(chk_dir, episodes, cores, filter_type):
     scaler_file = chk_dir + '/scaler_latest'
     scaler = pickle.load(open(scaler_file, 'rb'))
     p = multiprocessing.Pool(cores, maxtasksperchild=1)
     tras = p.map(run_episode_from_last_checkpoint,
-            [(scaler, chk_dir)]*episodes)
+            [(scaler, chk_dir, filter_type)]*episodes)
     p.close()
     p.join()
     episodes_file = chk_dir + '/episodes_latest'
@@ -54,6 +48,7 @@ def run_episode_from_last_checkpoint(pickled_object):
     import tensorflow as tf
     scaler = pickled_object[0]
     chkp_dir = pickled_object[1]
+    filter_type = pickled_object[2]
     sess = tf.Session()
     latest_chkp_file = tf.train.latest_checkpoint(chkp_dir, latest_filename='policy_checkpoint')
     meta_graph = tf.train.import_meta_graph(latest_chkp_file + '.meta')
@@ -71,7 +66,7 @@ def run_episode_from_last_checkpoint(pickled_object):
     scale[-1] = 1.0
     offset[-1] = 0.0
     while not done:
-        obs = get_computed_observation(cur_obs, old_obs)
+        obs = build_features(cur_obs, old_obs, filter_type)
         obs = np.asarray(obs)
         obs = obs.astype(np.float64).reshape((1, -1))
         obs = np.append(obs, [[step]], axis=1)
@@ -115,9 +110,11 @@ class myHandler(BaseHTTPRequestHandler):
             episodes = int(query['episodes'][0])
             chk_dir = query['chk_dir'][0]
             cores = int(query['cores'][0])
+            filter_type = str(query['filter_type'][0])
             print(chk_dir)
             print(episodes)
-            dump_episodes(chk_dir, episodes, cores)
+            print(filter_type)
+            dump_episodes(chk_dir, episodes, cores, filter_type)
             # s = Scaler(42)
             # traj = mp_test(s)
             # pickle.dump(traj, open('traj.pkl', 'wb'))
