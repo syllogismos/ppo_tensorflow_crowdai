@@ -9,6 +9,7 @@ import numpy as np
 import os
 from sklearn.utils import shuffle
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 class NNValueFunction(object):
     """ NN-based state-value function """

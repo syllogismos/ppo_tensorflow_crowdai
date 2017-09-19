@@ -7,13 +7,13 @@ from osim.env import RunEnv
 import numpy as np
 from utils import Scaler
 import multiprocessing
-import pickle, random
+import pickle, random, os
 import copy
 from utils import build_features
 
 
 PORT_NUMBER = 8018
-
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 def dump_episodes(chk_dir, episodes, cores, filter_type):
     scaler_file = chk_dir + '/scaler_latest'
@@ -55,6 +55,7 @@ def get_sample_seed(episodes):
     p.join()
     print(seeds)
     print(seeds_np)
+    return seeds, seeds_np
 
 
 def run_episode_from_last_checkpoint(pickled_object):
@@ -121,9 +122,7 @@ def run_episode_from_last_checkpoint(pickled_object):
 
 def get_action_from_obs(sess, obs_ph, sampled_act, obs):
     feed_dict = {obs_ph: obs}
-    return np.clip(sess.run(sampled_act, feed_dict=feed_dict).reshape((1, -1)).astype(np.float64),
-                   0.0,
-                   1.0)
+    return sess.run(sampled_act, feed_dict=feed_dict).reshape((1, -1)).astype(np.float64)
 
 
 class myHandler(BaseHTTPRequestHandler):
@@ -158,11 +157,14 @@ class myHandler(BaseHTTPRequestHandler):
             self.wfile.write(bytes(json.dumps({'Success': 'OK'}), 'utf8'))
 
         if '/seed_test' in self.path:
-            get_sample_seed(2)
+            parsed_url = urlparse.urlparse(self.path)
+            query = urlparse.parse_qs(parsed_url.query)
+            episodes = int(query['episodes'][0])
+            seeds, seeds_np = get_sample_seed(episodes)
             self.send_response(200)
             self.send_header('Content-type', 'application/javascript')
             self.end_headers()
-            self.wfile.write(bytes(json.dumps({'Success': 'OK'}), 'utf8'))
+            self.wfile.write(bytes(json.dumps({'Success': 'OK', 'seeds': seeds, 'seeds_np': seeds_np}), 'utf8'))
 
 
 if __name__ == '__main__':

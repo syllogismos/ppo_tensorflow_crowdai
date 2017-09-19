@@ -44,6 +44,8 @@ import http.client
 import json, pickle
 import time
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 class GracefulKiller:
     """ Gracefully exit program on CTRL-C """
     def __init__(self):
