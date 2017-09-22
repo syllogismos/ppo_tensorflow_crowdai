@@ -1,6 +1,6 @@
 import argparse
 import tensorflow as tf
-import os, shutil
+import os, shutil, glob
 
 
 def extract_snapshot(chk_dir, des_dir):
@@ -39,6 +39,10 @@ def extract_snapshot(chk_dir, des_dir):
     basename_val = os.path.basename(latest_val_file)
     build_checkpoint_file(des_dir, basename_pol, 'policy_checkpoint')
     build_checkpoint_file(des_dir, basename_val, 'value_checkpoint')
+    
+    filenames = glob.glob(chk_dir + '*.py') + glob.glob(chk_dir + '*.csv')
+    for filename in filenames:
+        shutil.copy(filename, des_path)
     return
 
 def build_checkpoint_file(des_dir, basename, checkpoint):
